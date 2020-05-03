@@ -90,7 +90,7 @@ static Token *tokenize(void) {
       continue;
     }
 
-    if (ispunct(*p)) {
+    if (*p == '+' || *p == '-') {
       Token *nxt;
       nxt = new_token(TK_RESERVED, p++, sizeof(char));
       cur->next = nxt;
@@ -109,7 +109,7 @@ static Token *tokenize(void) {
       continue;
     }
 
-    error_at(p, "invalid token");
+    error_at(p, "expected a number");
   }
 
   Token *nxt;
@@ -117,146 +117,6 @@ static Token *tokenize(void) {
   cur->next = nxt;
   cur = nxt;
   return head.next;
-}
-
-typedef enum {
-  ND_ADD, // +
-  ND_SUB, // -
-  ND_MUL, // *
-  ND_DIV, // /
-  ND_NUM, // Integer
-} NodeKind;
-
-typedef struct Node Node;
-struct Node {
-  NodeKind kind;
-  Node *lhs;
-  Node *rhs;
-  long val;
-};
-
-static Node *new_node(NodeKind kind) {
-  Node *node = calloc(1, sizeof(Node));
-  node->kind = kind;
-  return node;
-}
-
-static Node *new_binary(NodeKind kind, Node *lhs, Node *rhs) {
-  Node *node = new_node(kind);
-  node->lhs = lhs;
-  node->rhs = rhs;
-  return node;
-}
-
-static Node *new_num(long val) {
-  Node *node = new_node(ND_NUM);
-  node->val = val;
-  return node;
-}
-
-static Node *expr(Token **rest, Token *tok);
-static Node *mul(Token **rest, Token *tok);
-static Node *primary(Token **rest, Token *tok);
-
-// expr = mul ("+" mul | "-" mul)*
-static Node *expr(Token **rest, Token *tok) {
-  Node *node = mul(&tok, tok);
-
-  for(;;) {
-    if (equal(tok, "+")) {
-      Node *rhs = mul(&tok, tok->next);
-      node = new_binary(ND_ADD, node, rhs);
-      continue;
-    }
-
-    if (equal(tok, "-")) {
-      Node *rhs = mul(&tok, tok->next);
-      node = new_binary(ND_SUB, node, rhs);
-      continue;
-    }
-
-    *rest = tok;
-    return node;
-  }
-}
-
-// mul = primary ("*" primary | "/" primary)*
-static Node *mul(Token **rest, Token *tok) {
-  Node *node = primary(&tok, tok);
-
-  for (;;) {
-    if (equal(tok, "*")) {
-      Node *rhs = primary(&tok, tok->next);
-      node = new_binary(ND_MUL, node, rhs);
-      continue;
-    }
-
-    if (equal(tok, "/")) {
-      Node *rhs = primary(&tok, tok->next);
-      node = new_binary(ND_DIV, node, rhs);
-      continue;
-    }
-
-    *rest = tok;
-    return node;
-  }
-}
-
-// primary = "(" expr ")" | num
-static Node *primary(Token **rest, Token *tok) {
-  if (equal(tok, "(")) {
-    Node *node = expr(&tok, tok->next);
-    *rest = skip(tok, ")");
-    return node;
-  }
-
-  Node *node = new_num(get_number(tok));
-  *rest = tok->next;
-  return node;
-}
-
-static char *reg(int idx) {
-  static char *r[] = {"r10", "r11", "r12", "r13", "r14", "r15"};
-  if (idx < 0 || sizeof(r) / sizeof(*r) <= idx) {
-    error("register out of range: %d", idx);
-  }
-  return r[idx];
-}
-
-static int top;
-
-static void gen_expr(Node *node) {
-  if (node->kind == ND_NUM) {
-    printf("  mov %s, %ld\n", reg(top++), node->val);
-    return;
-  }
-
-  gen_expr(node->lhs);
-  gen_expr(node->rhs);
-
-  char *rd = reg(top - 2);
-  char *rs = reg(top - 1);
-  top--;
-
-  switch (node->kind) {
-  case ND_ADD:
-    printf("  add %s, %s\n", rd, rs);
-    return;
-  case ND_SUB:
-    printf("  sub %s, %s\n", rd, rs);
-    return;
-  case ND_MUL:
-    printf("  imul %s, %s\n", rd, rs);
-    return;
-  case ND_DIV:
-    printf("  mov rax, %s\n", rd);
-    printf("  cqo\n");
-    printf("  idiv %s\n", rs);
-    printf("  mov %s, rax\n", rd);
-    return;
-  default:
-    error("invalid expression");
-  }
 }
 
 int main(int argc, char **argv) {
@@ -267,29 +127,25 @@ int main(int argc, char **argv) {
   current_input = argv[1];
   Token *tok = tokenize();
 
-  Node *node = expr(&tok, tok);
-
-  if (tok->kind != TK_EOF) {
-    error_tok(tok, "extra token");
-  }
-
   printf(".intel_syntax noprefix\n");
   printf(".global main\n");
   printf("main:\n");
 
-  printf("  push r12\n");
-  printf("  push r13\n");
-  printf("  push r14\n");
-  printf("  push r15\n");
+  printf("  mov rax, %ld\n", get_number(tok));
+  tok = tok->next;
 
-  gen_expr(node);
+  while (tok->kind != TK_EOF) {
+    if (equal(tok, "+")) {
+      printf("  add rax, %ld\n", get_number(tok->next));
+      tok = tok->next->next;
+      continue;
+    }
 
-  printf("  mov rax, %s\n", reg(top - 1));
+    tok = skip(tok, "-");
+    printf("    sub rax, %ld\n", get_number(tok));
+    tok = tok->next;
+  }
 
-  printf("  pop r15\n");
-  printf("  pop r14\n");
-  printf("  pop r13\n");
-  printf("  pop r12\n");
   printf("  ret\n");
   return 0;
 }
