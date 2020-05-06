@@ -79,6 +79,10 @@ static Token *new_token(TokenKind kind, char *str, int len) {
   return tok;
 }
 
+static bool startswith(const char *p, const char *q) {
+  return strncmp(p, q, strlen(q)) == 0;
+}
+
 static Token *tokenize(void) {
   char *p = current_input;
   Token head = {};
@@ -90,6 +94,16 @@ static Token *tokenize(void) {
       continue;
     }
 
+    if (startswith(p, "==") || startswith(p, "!=") ||
+        startswith(p, "<=") || startswith(p, ">=")) {
+      Token *nxt;
+      nxt = new_token(TK_RESERVED, p, sizeof(char) * 2);
+      cur->next = nxt;
+      cur = nxt;
+      p += 2;
+      continue;
+    }
+ 
     if (ispunct(*p)) {
       Token *nxt;
       nxt = new_token(TK_RESERVED, p++, sizeof(char));
@@ -124,6 +138,10 @@ typedef enum {
   ND_SUB, // -
   ND_MUL, // *
   ND_DIV, // /
+  ND_EQ, // ==
+  ND_NE, // !=
+  ND_LT, // <
+  ND_LE, // <=
   ND_NUM, // Integer
 } NodeKind;
 
@@ -155,15 +173,79 @@ static Node *new_num(long val) {
 }
 
 static Node *expr(Token **rest, Token *tok);
+static Node *equality(Token **rest, Token *tok);
+static Node *relational(Token **rest, Token *tok);
+static Node *add(Token **rest, Token *tok);
 static Node *mul(Token **rest, Token *tok);
 static Node *unary(Token **rest, Token *tok);
 static Node *primary(Token **rest, Token *tok);
 
-// expr = mul ("+" mul | "-" mul)*
+// expr = equality
 static Node *expr(Token **rest, Token *tok) {
-  Node *node = mul(&tok, tok);
+  return equality(rest, tok);
+}
+
+// equality = relational ("==" relational | "!=" relational)*
+static Node *equality(Token **rest, Token *tok) {
+  Node *node = relational(&tok, tok);
 
   for(;;) {
+    if (equal(tok, "==")) {
+      Node *rhs = relational(&tok, tok->next);
+      node = new_binary(ND_EQ, node, rhs);
+      continue;
+    }
+
+    if (equal(tok, "!=")) {
+      Node *rhs = relational(&tok, tok->next);
+      node = new_binary(ND_NE, node, rhs);
+      continue;
+    }
+
+    *rest = tok;
+    return node;
+  }
+}
+
+// relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+static Node *relational(Token **rest, Token *tok) {
+  Node *node = add(&tok, tok);
+
+  for (;;) {
+    if (equal(tok, "<")) {
+      Node *rhs = add(&tok, tok->next);
+      node = new_binary(ND_LT, node, rhs);
+      continue;
+    }
+
+    if (equal(tok, "<=")) {
+      Node *rhs = add(&tok, tok->next);
+      node = new_binary(ND_LE, node, rhs);
+      continue;
+    }
+
+    if (equal(tok, ">")) {
+      Node *rhs = add(&tok, tok->next);
+      node = new_binary(ND_LT, rhs, node);
+      continue;
+    }
+
+    if (equal(tok, ">=")) {
+      Node *rhs = add(&tok, tok->next);
+      node = new_binary(ND_LE, rhs, node);
+      continue;
+    }
+
+    *rest = tok;
+    return node;
+  }
+}
+
+// add = mul ("+" mul | "-" mul)*
+static Node *add(Token **rest, Token *tok) {
+  Node *node = mul(&tok, tok);
+
+  for (;;) {
     if (equal(tok, "+")) {
       Node *rhs = mul(&tok, tok->next);
       node = new_binary(ND_ADD, node, rhs);
@@ -268,6 +350,26 @@ static void gen_expr(Node *node) {
     printf("  cqo\n");
     printf("  idiv %s\n", rs);
     printf("  mov %s, rax\n", rd);
+    return;
+  case ND_EQ:
+    printf("  cmp %s, %s\n", rd, rs);
+    printf("  sete al\n");
+    printf("  movzb %s, al\n", rd);
+    return;
+  case ND_NE:
+    printf("  cmp %s, %s\n", rd, rs);
+    printf("  setne al\n");
+    printf("  movzb %s, al\n", rd);
+    return;
+  case ND_LT:
+    printf("  cmp %s, %s\n", rd, rs);
+    printf("  setl al\n");
+    printf("  movzb %s, al\n", rd);
+    return;
+  case ND_LE:
+    printf("  cmp %s, %s\n", rd, rs);
+    printf("  setle al\n");
+    printf("  movzb %s, al\n", rd);
     return;
   default:
     error("invalid expression");
