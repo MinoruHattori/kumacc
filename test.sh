@@ -51,4 +51,8 @@ assert 1 'return 1; 3; 5;'
 assert 3 '4; return 3; 9;'
 assert 4 '1; 2; return 4;'
 
+assert 5 'a=5; return a;'
+assert 9 'a=4; z=5; return a+z;'
+assert 8 'a=b=4; return a+b;'
+
 echo OK

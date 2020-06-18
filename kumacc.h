@@ -12,6 +12,7 @@
 
 typedef enum {
   TK_RESERVED,
+  TK_IDENT,
   TK_NUM,
   TK_EOF,
 } TokenKind;
@@ -44,8 +45,10 @@ typedef enum {
   ND_NE, // !=
   ND_LT, // <
   ND_LE, // <=
+  ND_ASSIGN, // =
   ND_RETURN, // "return"
   ND_EXPR_STMT, // Expression statement
+  ND_VAR, // Variable
   ND_NUM, // Integer
 } NodeKind;
 
@@ -55,6 +58,7 @@ struct Node {
   Node *next;
   Node *lhs;
   Node *rhs;
+  char name;
   long val;
 };
 

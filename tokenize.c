@@ -78,27 +78,19 @@ Token *tokenize(char *p) {
 
     if (startswith(p, "==") || startswith(p, "!=") ||
         startswith(p, "<=") || startswith(p, ">=")) {
-      Token *nxt;
-      nxt = new_token(TK_RESERVED, p, sizeof(char) * 2);
-      cur->next = nxt;
-      cur = nxt;
+      Token *new;
+      new = new_token(TK_RESERVED, p, sizeof(char) * 2);
+      cur->next = new;
+      cur = new;
       p += 2;
-      continue;
-    }
- 
-    if (ispunct(*p)) {
-      Token *nxt;
-      nxt = new_token(TK_RESERVED, p++, sizeof(char));
-      cur->next = nxt;
-      cur = nxt;
       continue;
     }
 
     if (isdigit(*p)) {
-      Token *nxt;
-      nxt = new_token(TK_NUM, p, 0);
-      cur->next = nxt;
-      cur = nxt;
+      Token *new;
+      new = new_token(TK_NUM, p, 0);
+      cur->next = new;
+      cur = new;
       char *q = p;
       cur->val = strtoul(p, &p, 10);
       cur->len = p - q;
@@ -106,20 +98,36 @@ Token *tokenize(char *p) {
     }
 
     if (startswith(p, "return") && !is_alnum(p[6])) {
-      Token *nxt;
-      nxt = new_token(TK_RESERVED, p, 6);
-      cur->next = nxt;
-      cur = nxt;
+      Token *new;
+      new = new_token(TK_RESERVED, p, 6);
+      cur->next = new;
+      cur = new;
       p += 6;
+      continue;
+    }
+
+    if ('a' <= *p && *p <= 'z') {
+      Token *new;
+      new = new_token(TK_IDENT, p++, 1);
+      cur->next = new;
+      cur = new;
+      continue;
+    }
+ 
+    if (ispunct(*p)) {
+      Token *new;
+      new = new_token(TK_RESERVED, p++, sizeof(char));
+      cur->next = new;
+      cur = new;
       continue;
     }
 
     error_at(p, "invalid token");
   }
 
-  Token *nxt;
-  nxt = new_token(TK_EOF, p, 0);
-  cur->next = nxt;
-  cur = nxt;
+  Token *new;
+  new = new_token(TK_EOF, p, 0);
+  cur->next = new;
+  cur = new;
   return head.next;
 }
